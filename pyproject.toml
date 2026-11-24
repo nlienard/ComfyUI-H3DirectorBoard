@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-h3directorboard"
 description = "Director dashboard for the MiniMax H3 Extender: cast, scenes, presence / voice / line per person and scene, H3 prompts written for you, each clip gets only its own photos and voices."
-version = "1.0.0"
+version = "1.0.1"
 license = { file = "LICENSE" }
 
 [tool.comfy]

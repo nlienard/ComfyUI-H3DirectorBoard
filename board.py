@@ -265,8 +265,12 @@ class H3DirectorBoard:
             raise ValueError("H3 Director Board: no active scene.")
         for w in res["warnings"]:
             print(f"[H3 Director Board] warning: {w}")
+        # only the photos used by at least one active scene go to the Extender (disabled people, unused extras /
+        # decor stay out of its Ref slots); each clip then gets only its own ones (routing_patch)
+        used = {p for info in res["scenes"] for p in info["pictures"]}
+        slots = [img if (k + 1) in used else None for k, img in enumerate(images)]
         ref_pack = {"type": "H3_REF_PACK", "version": 1, "source": SOURCE,
-                    "count": sum(x is not None for x in images), "slots": images}
+                    "count": sum(x is not None for x in slots), "slots": slots}
         prompt_pack = {"type": "H3_PROMPT_PACK", "version": 1, "source": SOURCE, "count": len(res["prompts"]),
                        "prompts": res["prompts"], "signature": signature(res["prompts"]),
                        "durations": res["durations"], "routing": res["scenes"]}
