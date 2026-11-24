@@ -3,7 +3,14 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const N_PEOPLE = 4, N_VOICES = 3, MAX_SCENES = 12;
+const N_PEOPLE = 4, N_VOICES = 3, MAX_SCENES = 12, N_LORAS = 4;
+const LORA_COLORS = ["#ff6b4a", "#b98bff", "#3fd0c9", "#e8d44d"];
+let LORA_FILES = null;
+async function loraFiles() {
+  if (LORA_FILES) return LORA_FILES;
+  try { LORA_FILES = await (await api.fetchApi("/h3board/loras")).json(); } catch { LORA_FILES = []; }
+  return LORA_FILES;
+}
 const KINDS = ["woman", "man", "young woman", "young man", "girl", "boy", "older woman", "older man", "person"];
 const WHERE = [["", "position…"], ["left", "left"], ["center", "center"], ["right", "right"], ["foreground", "foreground"],
                ["background", "background"], ["left-bg", "back left"], ["right-bg", "back right"]];
@@ -57,6 +64,10 @@ const CSS = `
 .h3b pre{white-space:pre-wrap;background:#0b0c0f;border:1px solid #2a2f3a;border-radius:6px;padding:7px;font:11px/1.4 ui-monospace,Consolas,monospace;color:#bfe;max-height:360px;overflow:auto;margin:6px 0 0}
 .h3b .tags{font-size:11px;color:#9ab}
 .h3b .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.h3b .lb{display:inline-block;border-radius:5px;padding:1px 6px;font-size:11px;margin:1px 2px;color:#111;font-weight:700}
+.h3b button.lora{border-left:5px solid var(--lc);font-size:11px;padding:2px 6px}
+.h3b button.lora.on{background:#4a3a1a;border-color:var(--lc);color:#fff}
+.h3b .lr{display:grid;grid-template-columns:90px 2.2fr 70px 1.2fr;gap:6px;align-items:center;margin-bottom:5px;border-left:5px solid var(--lc);padding-left:6px}
 .h3b label.lab{font-size:11px;color:#9aa3b2;display:block;margin:4px 0 2px}
 `;
 
@@ -96,9 +107,14 @@ function ensure(b) {
   b.people = (b.people || []).slice(0, N_PEOPLE);
   while (b.people.length < N_PEOPLE) b.people.push({ enabled: false, name: `Person ${b.people.length + 1}`, kind: "person", desc: "" });
   b.people.forEach((p, i) => { p.color ??= COLORS[i]; p.extra_text ??= "a full-body view of the same person (same outfit)"; p.kind ??= "person"; p.name ??= `Person ${i + 1}`; p.desc ??= ""; });
+  b.loras = (b.loras || []).slice(0, N_LORAS);
+  while (b.loras.length < N_LORAS) b.loras.push({});
+  b.loras.forEach((l, k) => { l.name ??= ""; l.strength ??= 1.0; l.trigger ??= ""; l.label ??= `LoRA ${k + 1}`; });
   b.scenes = (b.scenes || []).slice(0, MAX_SCENES);
   b.scenes.forEach((s) => {
     s.on ??= true; s.title ??= ""; s.duration ??= 5; s.decor ??= true; s.camera ??= ""; s.action ??= "";
+    s.loras = (s.loras || []).slice(0, N_LORAS).map(Boolean);
+    while (s.loras.length < N_LORAS) s.loras.push(false);
     s.cast = (s.cast || []).slice(0, N_PEOPLE);
     while (s.cast.length < N_PEOPLE) s.cast.push({ in: false, speaks: false, line: "", where: "", extra: false });
   });
@@ -241,7 +257,8 @@ function setupBoard(node) {
         class: "b" + (s.on ? "" : " off"), style: { flex: Math.max(1, Number(s.duration) || 1) },
         title: s.title, onclick: () => root.querySelector(`[data-scene="${si}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }),
       }, el("div", {}, el("span", { class: "n" }, si + 1), " ", el("span", { class: "muted" }, `${s.duration}s`)),
-        el("div", {}, s.cast.map((c, i) => c.in && b.people[i].enabled ? el("span", { title: personName(i) }, el("span", { class: "dot", style: { background: b.people[i].color } }), c.speaks ? "🎙" : "") : null))))));
+        el("div", {}, s.cast.map((c, i) => c.in && b.people[i].enabled ? el("span", { title: personName(i) }, el("span", { class: "dot", style: { background: b.people[i].color } }), c.speaks ? "🎙" : "") : null),
+          b.loras.map((l, k) => s.loras[k] && l.name ? el("span", { class: "lb", title: l.name, style: { background: LORA_COLORS[k] } }, l.label || `L${k + 1}`) : null))))));
   }
 
   function sceneRow(s, si) {
@@ -271,6 +288,9 @@ function setupBoard(node) {
         el("div", { class: "row" }, el("input", { type: "number", min: 1, max: 15, step: 0.5, value: s.duration, title: "duration (s)", oninput: (e) => { s.duration = Number(e.target.value) || 5; save(); } }), el("span", { class: "muted" }, "s")),
         el("label", { class: "muted row", title: "use the DECOR photo <Picture 5> in this scene" },
           el("input", { type: "checkbox", checked: s.decor, style: { width: "auto" }, onchange: (e) => { s.decor = e.target.checked; save(); } }), " 🏠 decor"),
+        el("div", { class: "row", style: { flexWrap: "wrap", gap: "3px" } }, b.loras.map((l, k) => l.name ? el("button", {
+          class: "lora" + (s.loras[k] ? " on" : ""), style: { "--lc": LORA_COLORS[k] }, title: `${l.name} (${l.strength})${l.trigger ? " · trigger: " + l.trigger : ""}`,
+          onclick: () => { s.loras[k] = !s.loras[k]; save(true); } }, (s.loras[k] ? "✔ " : "") + (l.label || `L${k + 1}`)) : null)),
         el("div", { class: "row" },
           el("button", { title: "move up", onclick: () => move(-1) }, "▲"), el("button", { title: "move down", onclick: () => move(1) }, "▼"),
           el("button", { title: "duplicate", onclick: () => { if (b.scenes.length >= MAX_SCENES) return; b.scenes.splice(si + 1, 0, JSON.parse(JSON.stringify(s))); save(true); } }, "⧉"),
@@ -284,6 +304,26 @@ function setupBoard(node) {
         el("div", { class: "row" }, el("button", { onclick: () => { if (state.open.has(si)) state.open.delete(si); else state.open.add(si); pre.style.display = state.open.has(si) ? "block" : "none"; } }, "👁 prompt"),
           el("button", { title: "copy this prompt", onclick: () => navigator.clipboard?.writeText(pre.textContent) }, "📋"), tags),
         pre));
+  }
+
+  function loraSection() {
+    const b = state.board;
+    const files = LORA_FILES || [];
+    const rows = b.loras.map((l, k) => {
+      const sel = el("select", { onchange: (e) => { l.name = e.target.value; if (l.name && /^LoRA \d$/.test(l.label)) l.label = l.name.split(/[\\/]/).pop().replace(/\.safetensors$/, "").slice(0, 14); save(true); } },
+        el("option", { value: "" }, "— none —"),
+        (files.includes(l.name) || !l.name ? files : [l.name, ...files]).map((f) => el("option", { value: f, selected: f === l.name }, f)));
+      const used = b.scenes.map((s, si) => s.loras[k] ? si + 1 : null).filter(Boolean);
+      return el("div", { class: "lr", style: { "--lc": LORA_COLORS[k] } },
+        el("input", { value: l.label, title: "short label (scene buttons)", oninput: (e) => { l.label = e.target.value; save(); }, onchange: () => render() }),
+        sel,
+        el("input", { type: "number", step: 0.05, value: l.strength, title: "strength", oninput: (e) => { l.strength = Number(e.target.value); save(); } }),
+        el("input", { value: l.trigger, placeholder: "trigger word(s), added to the prompt", oninput: (e) => { l.trigger = e.target.value; save(); } }),
+        el("span", { class: "muted", style: { gridColumn: "2 / 5" } }, l.name ? (used.length ? `active in scene ${used.join(", ")}` : "not used in any scene (tick it in the scenes)") : ""));
+    });
+    return el("div", { class: "sec" },
+      el("div", { class: "t" }, "🎛 LORAS PER SCENE", el("span", { class: "muted" }, "up to 4 · tick them per scene in the scene rows · model-only, applied to that clip only · trigger added at the start of the shot")),
+      rows);
   }
 
   function globalSection() {
@@ -307,7 +347,7 @@ function setupBoard(node) {
       el("div", { class: "bar" },
         el("h2", {}, "🎬 H3 DIRECTOR BOARD"), el("span", { class: "muted" }, "cast × scenes → prompts, photos and voices per clip"),
         el("span", { class: "sp" }),
-        el("button", { onclick: () => { if (b.scenes.length >= MAX_SCENES) return; const last = b.scenes[b.scenes.length - 1]; b.scenes.push(last ? { ...JSON.parse(JSON.stringify(last)), title: "", action: "", cast: last.cast.map((c) => ({ ...c, speaks: false, line: "" })) } : { on: true, title: "", duration: 5, decor: true, camera: "", action: "", cast: emptyCast() }); save(true); } }, "＋ scene"),
+        el("button", { onclick: () => { if (b.scenes.length >= MAX_SCENES) return; const last = b.scenes[b.scenes.length - 1]; b.scenes.push(last ? { ...JSON.parse(JSON.stringify(last)), title: "", action: "", cast: last.cast.map((c) => ({ ...c, speaks: false, line: "" })) } : { on: true, title: "", duration: 5, decor: true, camera: "", action: "", loras: [false, false, false, false], cast: emptyCast() }); save(true); } }, "＋ scene"),
         el("button", { onclick: () => { const all = b.scenes.every((_, i) => state.open.has(i)); b.scenes.forEach((_, i) => all ? state.open.delete(i) : state.open.add(i)); render(); } }, "👁 all prompts"),
         el("button", { title: "copy the board JSON", onclick: () => navigator.clipboard?.writeText(JSON.stringify(b, null, 1)) }, "⤓ export"),
         el("button", { title: "paste a board JSON", onclick: () => { const t = prompt("Paste a board JSON"); if (!t) return; try { state.board = ensure(JSON.parse(t)); save(true); } catch (e) { alert("Invalid JSON: " + e); } } }, "⤒ import"),
@@ -315,6 +355,7 @@ function setupBoard(node) {
       live.warn,
       timeline(),
       castSection(),
+      loraSection(),
       el("div", { class: "sec" }, el("div", { class: "t" }, "🎞 SCENES", el("span", { class: "muted" }, "✔ = in the scene (photo sent) · 🎙 = speaks (voice sent) · empty scenes get no voice")),
         b.scenes.map((s, si) => sceneRow(s, si))),
       globalSection());
@@ -324,6 +365,7 @@ function setupBoard(node) {
   read();
   render();
   scheduleCompose();
+  loraFiles().then(() => render());
 
   node.addDOMWidget("director_board", "h3board", root, {
     serialize: false,

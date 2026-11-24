@@ -27,6 +27,11 @@ try:
         except Exception as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    @PromptServer.instance.routes.get("/h3board/loras")
+    async def _loras(request):
+        import folder_paths
+        return web.json_response(folder_paths.get_filename_list("loras"))
+
     @PromptServer.instance.routes.get("/h3board/default")
     async def _default(request):
         return web.json_response(default_board())

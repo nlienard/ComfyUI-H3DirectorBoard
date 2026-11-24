@@ -8,7 +8,7 @@ Stock Extender behaviour (extender.py, read 2026-11-24):
 With a board pack:
   - a clip receives only the pictures <Picture n> written in its own prompt;
   - a clip receives only the voices <Audio n> written in its own prompt (none if none);
-  - the duration of each NOT validated card is set from the board.
+  - the duration and the LoRA stack (per scene, 0-4 LoRAs) of each NOT validated card come from the board.
 Other workflows (no board pack) are untouched.
 """
 from __future__ import annotations
@@ -30,6 +30,20 @@ _PATCHED = False
 
 def _is_board(pack):
     return isinstance(pack, dict) and pack.get("source") == SOURCE
+
+
+def _apply_board(clips, pack):
+    """Durations and per-clip LoRA stacks from the board, on cards that are not validated."""
+    durs = list(pack.get("durations") or [])
+    loras = list(pack.get("loras") or [])
+    for k, c in enumerate(clips):
+        if not isinstance(c, dict) or c.get("validated"):
+            continue
+        if k < len(durs):
+            c["duration"] = float(durs[k])
+        if k < len(loras):
+            c["loras"] = [{"name": l["name"], "strength": float(l["strength"])} for l in loras[k]]
+            c.pop("lora", None)
 
 
 def patch():
@@ -85,9 +99,7 @@ def patch():
         if board is not None:
             try:
                 synced = res[0]
-                for c, d in zip(synced, board.get("durations") or []):
-                    if isinstance(c, dict) and not c.get("validated") and float(c.get("duration") or 0) != float(d):
-                        c["duration"] = float(d)
+                _apply_board(synced, board)
             except Exception as exc:
                 _LOG.warning("H3 Director Board: durations not applied (%s)", exc)
         return res
@@ -108,9 +120,7 @@ def patch():
             if isinstance(cj, str):   # cards that already exist: durations from the board (not validated cards)
                 try:
                     d = json.loads(cj)
-                    for c, dur in zip(d.get("clips") or [], pack.get("durations") or []):
-                        if isinstance(c, dict) and not c.get("validated"):
-                            c["duration"] = float(dur)
+                    _apply_board(d.get("clips") or [], pack)
                     kwargs["clips_json"] = json.dumps(d, ensure_ascii=False)
                 except Exception:
                     pass

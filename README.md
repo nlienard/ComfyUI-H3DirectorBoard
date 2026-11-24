@@ -12,6 +12,9 @@ a multi-person / multi-scene H3 graph needs.
   reorder / duplicate / delete.
 - **Per person and per scene**: ✔ in the scene (photo sent), 🎙 speaks (voice sent) + the line, position
   (left / center / right / background…), + extra ref (full body / face).
+- **LoRAs per scene** (up to 4): pick the file, strength, trigger word(s) and a label once, then tick them scene by scene
+  (e.g. a combat LoRA only in the fight scenes). The board writes them on the Extender clip cards (model-only, that
+  clip only) and adds the trigger at the start of the shot.
 - **Write names, not tags**: "Nico sits at the table, Alex looks at the screen" becomes `<Subject 2> … <Subject 1>`.
 - **Prompts written for H3**: `subject_definitions` (only the people of the scene), `[Shot 1]` with
   "Exactly N people in the frame", positions, action, lines (`<Subject n> says in French: "…"`), "No words, no
@@ -24,7 +27,7 @@ and a clip with no `<Audio n>` tag gets the first wired voice (silent scenes mum
 When the Extender's `prompt_pack` comes from the board, this pack patches it so that:
 - a clip receives only the `<Picture n>` written in its own prompt,
 - a clip receives only the `<Audio n>` written in its own prompt (none if nobody speaks),
-- each not-validated card takes its duration from the board.
+- each not-validated card takes its duration and its LoRA stack from the board.
 Graphs without the board are untouched.
 
 ## Wiring

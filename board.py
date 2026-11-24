@@ -19,6 +19,7 @@ SOURCE = "H3 Director Board"
 MAX_SCENES = 12
 N_PEOPLE = 4
 N_VOICES = 3
+N_LORAS = 4
 
 KINDS = ["woman", "man", "young woman", "young man", "girl", "boy", "older woman", "older man", "person"]
 WHERE = {
@@ -55,6 +56,7 @@ def default_board():
                  "<Picture 5> shows only the place: nobody from it appears in the video.",
         "sound": "Quiet room tone, soft footsteps, small everyday sounds.",
         "music": "N/A",
+        "loras": [{"name": "", "strength": 1.0, "trigger": "", "label": f"LoRA {k + 1}"} for k in range(N_LORAS)],
         "people": [
             person("Anna", "woman", "#e0559a", "She wears a light-blue t-shirt and jeans."),
             person("Tom", "man", "#3fa7f5", "He wears a dark grey t-shirt and jeans."),
@@ -86,6 +88,17 @@ def normalize(board):
         for k, v in base["people"][i].items():
             p.setdefault(k, v)
     out["people"] = people
+    loras = list(out.get("loras") or [])[:N_LORAS]
+    while len(loras) < N_LORAS:
+        loras.append({})
+    out["loras"] = []
+    for k, l in enumerate(loras):
+        try:
+            st = float(l.get("strength", 1.0))
+        except (TypeError, ValueError):
+            st = 1.0
+        out["loras"].append({"name": str(l.get("name") or ""), "strength": st, "trigger": str(l.get("trigger") or ""),
+                             "label": str(l.get("label") or f"LoRA {k + 1}")})
     scenes = []
     for s in list(out.get("scenes") or [])[:MAX_SCENES]:
         s = dict(s)
@@ -95,6 +108,8 @@ def normalize(board):
         s.setdefault("decor", True)
         s.setdefault("camera", "")
         s.setdefault("action", "")
+        sl = list(s.get("loras") or [])[:N_LORAS]
+        s["loras"] = [bool(x) for x in sl] + [False] * (N_LORAS - len(sl))
         cast = list(s.get("cast") or [])[:N_PEOPLE]
         while len(cast) < N_PEOPLE:
             cast.append({})
@@ -201,7 +216,15 @@ def compose(board, connected=None):
         cam = _sentence(s.get("camera"))
         if cam and not cam.lower().startswith(("the camera", "camera")):
             cam = "The camera: " + cam[0].lower() + cam[1:]
-        shot = " ".join(x for x in (_sentence(b.get("style")), count, action, talk, cam, _sentence(b.get("camera"))) if x)
+        scene_loras, triggers = [], []
+        for k, l in enumerate(b["loras"]):
+            if s["loras"][k] and l["name"].strip():
+                scene_loras.append({"name": l["name"].strip(), "strength": l["strength"]})
+                if l["trigger"].strip():
+                    triggers.append(_sentence(l["trigger"]))
+            elif s["loras"][k]:
+                warnings.append(f"{tag}: {l['label']} is ticked but no LoRA file is chosen.")
+        shot = " ".join(x for x in (*triggers, _sentence(b.get("style")), count, action, talk, cam, _sentence(b.get("camera"))) if x)
         sound = _sentence(b.get("sound"))
         sound += (" No speech except the lines written in this scene." if speakers else " No speech, no words at all.")
         prompt = ("subject_definitions:\n" + "\n".join(defs) + "\n"
@@ -218,7 +241,7 @@ def compose(board, connected=None):
         durations.append(dur)
         index.append(si)
         infos.append({"scene": sn, "pictures": sorted(set(pics)), "voices": auds, "people": [i + 1 for i in present],
-                      "duration": dur})
+                      "duration": dur, "loras": scene_loras})
     if not prompts:
         warnings.append("No active scene: turn at least one scene ON.")
     return {"prompts": prompts, "durations": durations, "scene_index": index, "warnings": warnings, "scenes": infos}
@@ -273,9 +296,10 @@ class H3DirectorBoard:
                     "count": sum(x is not None for x in slots), "slots": slots}
         prompt_pack = {"type": "H3_PROMPT_PACK", "version": 1, "source": SOURCE, "count": len(res["prompts"]),
                        "prompts": res["prompts"], "signature": signature(res["prompts"]),
-                       "durations": res["durations"], "routing": res["scenes"]}
+                       "durations": res["durations"], "loras": [i["loras"] for i in res["scenes"]],
+                       "routing": res["scenes"]}
         preview = "\n\n".join(f"===== SCENE {info['scene']} ({info['duration']:g} s) pictures {info['pictures']} "
-                              f"voices {info['voices']} =====\n{p}" for p, info in zip(res["prompts"], res["scenes"]))
+                              f"voices {info['voices']} loras {[l['name'].split(chr(92))[-1] + ' ' + format(l['strength'], 'g') for l in info['loras']]} =====\n{p}" for p, info in zip(res["prompts"], res["scenes"]))
         if res["warnings"]:
             preview = "WARNINGS:\n- " + "\n- ".join(res["warnings"]) + "\n\n" + preview
         return (ref_pack, prompt_pack, voices[0], voices[1], voices[2], preview, len(res["prompts"]))
